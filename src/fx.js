@@ -1,5 +1,44 @@
 let /** @type {AudioContext | null} */ audioCtx = null;
 
+/** 各 ColorKey 用（Canvas メタボール塗り） */
+const LIQUID_RGB = {
+  r: [255, 108, 135],
+  b: [90, 210, 255],
+  g: [100, 245, 170],
+  y: [255, 210, 80],
+  p: [220, 150, 255],
+  o: [255, 160, 95],
+  c: [100, 235, 230],
+};
+
+/**
+ * @param {number} u
+ * @param {{ x: number; y: number }} p0
+ * @param {{ x: number; y: number }} p1
+ * @param {{ x: number; y: number }} p2
+ */
+function quadPoint(u, p0, p1, p2) {
+  const t = 1 - u;
+  return {
+    x: t * t * p0.x + 2 * t * u * p1.x + u * u * p2.x,
+    y: t * t * p0.y + 2 * t * u * p1.y + u * u * p2.y,
+  };
+}
+
+/**
+ * @param {number} u
+ * @param {{ x: number; y: number }} p0
+ * @param {{ x: number; y: number }} p1
+ * @param {{ x: number; y: number }} p2
+ */
+function quadTan(u, p0, p1, p2) {
+  const t = 1 - u;
+  return {
+    x: 2 * t * (p1.x - p0.x) + 2 * u * (p2.x - p1.x),
+    y: 2 * t * (p1.y - p0.y) + 2 * u * (p2.y - p1.y),
+  };
+}
+
 export function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
@@ -134,11 +173,11 @@ export function playWinFanfare() {
 /**
  * @param {HTMLElement} fromWrapEl
  * @param {HTMLElement} toWrapEl
- * @param {number} n
- * @param {string} liquidBackground
+ * @param {number} n 注ぐ段数（ボールの伸び・個数に反映）
+ * @param {string} colorKey PALETTE のキー
  * @param {() => void} onComplete
  */
-export function runPourAnimation(fromWrapEl, toWrapEl, n, liquidBackground, onComplete) {
+export function runPourAnimation(fromWrapEl, toWrapEl, n, colorKey, onComplete) {
   if (prefersReducedMotion()) {
     queueMicrotask(onComplete);
     return;
@@ -155,63 +194,159 @@ export function runPourAnimation(fromWrapEl, toWrapEl, n, liquidBackground, onCo
 
   const fi = fromInner.getBoundingClientRect();
   const ti = toInner.getBoundingClientRect();
-  const segH = (fi.height - 9) / 4;
-  const h = Math.max(18, segH * n + (n - 1) * 3);
-  const w = Math.max(20, fi.width * 0.62);
+  const blobW = Math.max(20, fi.width * 0.62);
 
-  const sx = fi.left + fi.width / 2 - w / 2;
+  const sx = fi.left + fi.width / 2 - blobW / 2;
   const sy = fi.top + 4;
-  const ex = ti.left + ti.width / 2 - w / 2;
+  const ex = ti.left + ti.width / 2 - blobW / 2;
   const ey = ti.top + 2;
 
   const cpx = (sx + ex) / 2;
   const cpy = Math.min(sy, ey) - Math.max(56, Math.abs(ex - sx) * 0.35);
 
+  const p0 = { x: sx, y: sy };
+  const p1 = { x: cpx, y: cpy };
+  const p2 = { x: ex, y: ey };
+
+  const pad = 76;
+  const minX = Math.floor(Math.min(sx, ex, cpx) - pad);
+  const maxX = Math.ceil(Math.max(sx, ex, cpx) + pad);
+  const minY = Math.floor(Math.min(sy, ey, cpy) - pad);
+  const maxY = Math.ceil(Math.max(sy, ey, cpy) + pad);
+  const cw = maxX - minX;
+  const ch = maxY - minY;
+  if (cw < 16 || ch < 16) {
+    queueMicrotask(onComplete);
+    return;
+  }
+
+  const rgb = LIQUID_RGB[/** @type {keyof typeof LIQUID_RGB} */ (colorKey)] ?? LIQUID_RGB.r;
+
   const layer = document.createElement("div");
   layer.className = "pour-fx-layer";
   layer.setAttribute("aria-hidden", "true");
 
-  const slug = document.createElement("div");
-  slug.className = "pour-slug";
-  slug.style.width = `${w}px`;
-  slug.style.height = `${h}px`;
-  slug.style.background = liquidBackground;
-  const gloss = document.createElement("div");
-  gloss.className = "pour-slug-gloss";
-  slug.appendChild(gloss);
+  const canvas = document.createElement("canvas");
+  canvas.className = "pour-fx-canvas";
 
-  layer.appendChild(slug);
+  const area = cw * ch;
+  const downScale = area > 320000 ? 0.34 : area > 140000 ? 0.42 : 0.52;
+  const rw = Math.max(56, Math.floor(cw * downScale));
+  const rh = Math.max(56, Math.floor(ch * downScale));
+
+  canvas.width = rw;
+  canvas.height = rh;
+  canvas.style.width = `${cw}px`;
+  canvas.style.height = `${ch}px`;
+  canvas.style.left = `${minX}px`;
+  canvas.style.top = `${minY}px`;
+
+  const ctx = canvas.getContext("2d", { alpha: true });
+  if (!ctx) {
+    queueMicrotask(onComplete);
+    return;
+  }
+
+  layer.appendChild(canvas);
   document.body.appendChild(layer);
 
   playPourStart();
 
-  slug.style.left = "0px";
-  slug.style.top = "0px";
+  const ballCount = Math.min(8, 4 + Math.min(4, n));
+  const baseR = 9 + n * 1.6;
+  const duration = 600;
+  const threshold = 1.12;
+  const edgeBlend = threshold * 0.32;
 
-  const anim = slug.animate(
-    [
-      { transform: `translate(${sx}px, ${sy}px) rotate(-8deg) scale(1, 1.02)`, opacity: 0.96 },
-      { transform: `translate(${cpx}px, ${cpy}px) rotate(5deg) scale(0.96, 1.05)`, opacity: 1 },
-      { transform: `translate(${ex}px, ${ey}px) rotate(0deg) scale(1, 1)`, opacity: 1 },
-    ],
-    { duration: 560, easing: "cubic-bezier(0.42, 0, 0.2, 1)", fill: "forwards" },
-  );
+  /** @type {{ x: number; y: number; r: number }[]} */
+  const buildBalls = (globalT) => {
+    const balls = [];
+    for (let i = 0; i < ballCount; i += 1) {
+      const stagger = i * 0.12;
+      const u = Math.max(0, Math.min(1, globalT * 1.08 - stagger));
+      if (u <= 0.001 && i > 2) continue;
+      const pt = quadPoint(u, p0, p1, p2);
+      const tan = quadTan(u, p0, p1, p2);
+      const len = Math.hypot(tan.x, tan.y) || 1;
+      const nx = -tan.y / len;
+      const ny = tan.x / len;
+      const wob = Math.sin(globalT * Math.PI * 7 + i * 1.1) * (4 + i * 0.8);
+      const pul = 0.88 + 0.14 * Math.sin(globalT * 14 + i);
+      balls.push({
+        x: pt.x + nx * wob,
+        y: pt.y + ny * wob,
+        r: baseR * pul * (0.9 + 0.1 * (1 - u)),
+      });
+    }
+    if (balls.length === 0) {
+      balls.push({ x: p0.x, y: p0.y, r: baseR });
+    }
+    return balls;
+  };
+
+  const renderFrame = (globalT) => {
+    const balls = buildBalls(globalT);
+    const imageData = ctx.createImageData(rw, rh);
+    const d = imageData.data;
+
+    for (let py = 0; py < rh; py += 1) {
+      for (let px = 0; px < rw; px += 1) {
+        const scrX = minX + ((px + 0.5) / rw) * cw;
+        const scrY = minY + ((py + 0.5) / rh) * ch;
+        let sum = 0;
+        for (let b = 0; b < balls.length; b += 1) {
+          const ball = balls[b];
+          const dx = scrX - ball.x;
+          const dy = scrY - ball.y;
+          sum += (ball.r * ball.r) / (dx * dx + dy * dy + 1.2);
+        }
+        if (sum < threshold - edgeBlend) continue;
+
+        let a = 1;
+        if (sum < threshold + edgeBlend) {
+          a = (sum - (threshold - edgeBlend)) / (2 * edgeBlend);
+          if (a < 0.02) continue;
+          if (a > 1) a = 1;
+        }
+
+        const spec = Math.min(1.35, sum / (threshold * 2.8));
+        const hi = 0.78 + 0.22 * spec;
+        const idx = (py * rw + px) * 4;
+        d[idx] = Math.min(255, rgb[0] * hi);
+        d[idx + 1] = Math.min(255, rgb[1] * hi);
+        d[idx + 2] = Math.min(255, rgb[2] * hi);
+        d[idx + 3] = Math.round(a * 255);
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+  };
 
   let settled = false;
   /** @type {ReturnType<typeof setTimeout> | null} */
   let safety = null;
+  /** @type {number} */
+  let rafId = 0;
+
   const settle = () => {
     if (settled) return;
     settled = true;
     if (safety != null) window.clearTimeout(safety);
-    try {
-      anim.cancel();
-    } catch {
-      /* ignore */
-    }
+    window.cancelAnimationFrame(rafId);
     layer.remove();
     onComplete();
   };
-  safety = window.setTimeout(settle, 900);
-  anim.onfinish = () => settle();
+
+  const start = performance.now();
+  const tick = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    renderFrame(t);
+    if (t < 1) {
+      rafId = requestAnimationFrame(tick);
+    } else {
+      settle();
+    }
+  };
+
+  rafId = requestAnimationFrame(tick);
+  safety = window.setTimeout(settle, 980);
 }

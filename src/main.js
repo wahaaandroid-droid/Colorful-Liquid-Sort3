@@ -367,7 +367,6 @@ function onTubeClick(index) {
   const n = canPour(from, to);
   if (n > 0) {
     const color = /** @type {ColorKey} */ (from[from.length - 1]);
-    const bg = PALETTE[color] ?? PALETTE.r;
 
     if (prefersReducedMotion()) {
       const won = commitPour(fromIdx, index, n);
@@ -385,7 +384,7 @@ function onTubeClick(index) {
         finishPourAndRender(fromIdx, index, n);
         return;
       }
-      runPourAnimation(fw, tw, n, bg, () => finishPourAndRender(fromIdx, index, n));
+      runPourAnimation(fw, tw, n, color, () => finishPourAndRender(fromIdx, index, n));
     });
     return;
   }

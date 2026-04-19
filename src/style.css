@@ -353,26 +353,11 @@ body {
   pointer-events: auto;
 }
 
-.pour-slug {
+.pour-fx-canvas {
   position: fixed;
-  left: 0;
-  top: 0;
   pointer-events: none;
-  border-radius: 16px 16px 12px 12px;
-  box-shadow:
-    0 14px 36px rgba(0, 0, 0, 0.45),
-    inset 0 2px 0 rgba(255, 255, 255, 0.45),
-    inset 0 -16px 28px rgba(0, 0, 0, 0.22);
-  overflow: hidden;
-  will-change: transform;
-}
-
-.pour-slug-gloss {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(105deg, rgba(255, 255, 255, 0.55) 0%, transparent 42%, transparent 58%, rgba(0, 0, 0, 0.08) 100%);
-  pointer-events: none;
-  mix-blend-mode: soft-light;
+  z-index: 61;
+  filter: blur(1.1px) saturate(1.12);
 }
 
 @media (prefers-reduced-motion: reduce) {
