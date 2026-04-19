@@ -296,6 +296,57 @@ body {
   transform-origin: 50% 100%;
 }
 
+.tube-wrap.tube-pouring .liquid {
+  animation: none !important;
+}
+
+.pour-drain-wrap {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 3px;
+  width: 100%;
+  flex-shrink: 0;
+  transform-origin: 50% 100%;
+  will-change: transform;
+  overflow: hidden;
+}
+
+.pour-fill-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 3px;
+  width: 100%;
+  flex-shrink: 0;
+  transform-origin: 50% 0;
+  will-change: transform;
+}
+
+.pour-fill-stack .liquid {
+  flex: 0 0 calc((100% - 9px) / 4);
+  min-height: 0;
+}
+
+/* 注ぎ中：上面を薄くフラットにして丸玉感を抑える */
+.liquid.liquid--pour-drain-top {
+  border-radius: 7px 7px 5px 5px;
+}
+
+.liquid.liquid--pour-drain-top::before {
+  opacity: 0.32;
+  height: 28%;
+}
+
+.liquid.liquid--pour-fill-top {
+  border-radius: 8px 8px 5px 5px;
+}
+
+.liquid.liquid--pour-fill-top::before {
+  opacity: 0.38;
+  height: 30%;
+}
+
 .liq-r {
   box-shadow:
     inset 0 5px 14px rgba(255, 255, 255, 0.32),
@@ -357,7 +408,7 @@ body {
   position: fixed;
   pointer-events: none;
   z-index: 61;
-  filter: blur(1.1px) saturate(1.12);
+  filter: blur(2px) saturate(1.18);
 }
 
 @media (prefers-reduced-motion: reduce) {

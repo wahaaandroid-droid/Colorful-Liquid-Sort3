@@ -384,7 +384,9 @@ function onTubeClick(index) {
         finishPourAndRender(fromIdx, index, n);
         return;
       }
-      runPourAnimation(fw, tw, n, color, () => finishPourAndRender(fromIdx, index, n));
+      runPourAnimation(fw, tw, n, color, PALETTE[color] ?? PALETTE.r, () =>
+        finishPourAndRender(fromIdx, index, n),
+      );
     });
     return;
   }

@@ -39,6 +39,12 @@ function quadTan(u, p0, p1, p2) {
   };
 }
 
+/** @param {number} t */
+function smoothstep01(t) {
+  const x = Math.max(0, Math.min(1, t));
+  return x * x * (3 - 2 * x);
+}
+
 export function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
@@ -173,11 +179,12 @@ export function playWinFanfare() {
 /**
  * @param {HTMLElement} fromWrapEl
  * @param {HTMLElement} toWrapEl
- * @param {number} n 注ぐ段数（ボールの伸び・個数に反映）
+ * @param {number} n 注ぐ段数
  * @param {string} colorKey PALETTE のキー
+ * @param {string} liquidGradient tubeEl と同じ背景グラデーション
  * @param {() => void} onComplete
  */
-export function runPourAnimation(fromWrapEl, toWrapEl, n, colorKey, onComplete) {
+export function runPourAnimation(fromWrapEl, toWrapEl, n, colorKey, liquidGradient, onComplete) {
   if (prefersReducedMotion()) {
     queueMicrotask(onComplete);
     return;
@@ -192,30 +199,93 @@ export function runPourAnimation(fromWrapEl, toWrapEl, n, colorKey, onComplete) 
     return;
   }
 
-  const fi = fromInner.getBoundingClientRect();
-  const ti = toInner.getBoundingClientRect();
-  const blobW = Math.max(20, fi.width * 0.62);
+  let fi = fromInner.getBoundingClientRect();
+  let ti = toInner.getBoundingClientRect();
+  let blobW = Math.max(20, fi.width * 0.62);
 
-  const sx = fi.left + fi.width / 2 - blobW / 2;
-  const sy = fi.top + 4;
-  const ex = ti.left + ti.width / 2 - blobW / 2;
-  const ey = ti.top + 2;
+  let sx = fi.left + fi.width / 2 - blobW / 2;
+  let sy = fi.top + 4;
+  let ex = ti.left + ti.width / 2 - blobW / 2;
+  let ey = ti.top + 2;
 
-  const cpx = (sx + ex) / 2;
-  const cpy = Math.min(sy, ey) - Math.max(56, Math.abs(ex - sx) * 0.35);
+  let cpx = (sx + ex) / 2;
+  let cpy = Math.min(sy, ey) - Math.max(56, Math.abs(ex - sx) * 0.35);
+
+  const pad = 76;
+  let minX = Math.floor(Math.min(sx, ex, cpx) - pad);
+  let maxX = Math.ceil(Math.max(sx, ex, cpx) + pad);
+  let minY = Math.floor(Math.min(sy, ey, cpy) - pad);
+  let maxY = Math.ceil(Math.max(sy, ey, cpy) + pad);
+  let cw = maxX - minX;
+  let ch = maxY - minY;
+  if (cw < 16 || ch < 16) {
+    queueMicrotask(onComplete);
+    return;
+  }
+
+  if (!document.createElement("canvas").getContext("2d")) {
+    queueMicrotask(onComplete);
+    return;
+  }
+
+  fromWrapEl.classList.add("tube-pouring");
+  toWrapEl.classList.add("tube-pouring");
+
+  /** @type {HTMLDivElement | null} */
+  let drainWrap = null;
+
+  for (let i = 0; i < n; i += 1) {
+    const node = fromInner.firstChild;
+    if (!node) break;
+    if (!drainWrap) {
+      drainWrap = document.createElement("div");
+      drainWrap.className = "pour-drain-wrap";
+    }
+    drainWrap.appendChild(node);
+  }
+  if (drainWrap && drainWrap.firstChild) {
+    drainWrap.firstChild.classList.add("liquid--pour-drain-top");
+    fromInner.insertBefore(drainWrap, fromInner.firstChild);
+  }
+
+  const fillWrap = document.createElement("div");
+  fillWrap.className = "pour-fill-stack";
+  for (let i = 0; i < n; i += 1) {
+    const seg = document.createElement("div");
+    seg.className = `liquid liq liq-${colorKey}`;
+    seg.style.background = liquidGradient;
+    fillWrap.appendChild(seg);
+  }
+  fillWrap.firstChild?.classList.add("liquid--pour-fill-top");
+  toInner.insertBefore(fillWrap, toInner.firstChild);
+  fillWrap.querySelectorAll(".liquid").forEach((el) => {
+    el.style.transform = "scaleY(0.06)";
+    el.style.transformOrigin = "center bottom";
+  });
+
+  fi = fromInner.getBoundingClientRect();
+  ti = toInner.getBoundingClientRect();
+  blobW = Math.max(20, fi.width * 0.62);
+  sx = fi.left + fi.width / 2 - blobW / 2;
+  sy = fi.top + 4;
+  ex = ti.left + ti.width / 2 - blobW / 2;
+  ey = ti.top + 2;
+  cpx = (sx + ex) / 2;
+  cpy = Math.min(sy, ey) - Math.max(56, Math.abs(ex - sx) * 0.35);
 
   const p0 = { x: sx, y: sy };
   const p1 = { x: cpx, y: cpy };
   const p2 = { x: ex, y: ey };
 
-  const pad = 76;
-  const minX = Math.floor(Math.min(sx, ex, cpx) - pad);
-  const maxX = Math.ceil(Math.max(sx, ex, cpx) + pad);
-  const minY = Math.floor(Math.min(sy, ey, cpy) - pad);
-  const maxY = Math.ceil(Math.max(sy, ey, cpy) + pad);
-  const cw = maxX - minX;
-  const ch = maxY - minY;
+  minX = Math.floor(Math.min(sx, ex, cpx) - pad);
+  maxX = Math.ceil(Math.max(sx, ex, cpx) + pad);
+  minY = Math.floor(Math.min(sy, ey, cpy) - pad);
+  maxY = Math.ceil(Math.max(sy, ey, cpy) + pad);
+  cw = maxX - minX;
+  ch = maxY - minY;
   if (cw < 16 || ch < 16) {
+    fromWrapEl.classList.remove("tube-pouring");
+    toWrapEl.classList.remove("tube-pouring");
     queueMicrotask(onComplete);
     return;
   }
@@ -243,6 +313,8 @@ export function runPourAnimation(fromWrapEl, toWrapEl, n, colorKey, onComplete) 
 
   const ctx = canvas.getContext("2d", { alpha: true });
   if (!ctx) {
+    fromWrapEl.classList.remove("tube-pouring");
+    toWrapEl.classList.remove("tube-pouring");
     queueMicrotask(onComplete);
     return;
   }
@@ -252,40 +324,45 @@ export function runPourAnimation(fromWrapEl, toWrapEl, n, colorKey, onComplete) 
 
   playPourStart();
 
-  const ballCount = Math.min(8, 4 + Math.min(4, n));
-  const baseR = 9 + n * 1.6;
-  const duration = 600;
-  const threshold = 1.12;
-  const edgeBlend = threshold * 0.32;
+  const ballCount = Math.min(11, 6 + Math.min(5, n));
+  const baseR = 7 + n * 1.15;
+  const duration = 640;
+  const threshold = 2.35;
+  const edgeBlend = 0.95;
 
-  /** @type {{ x: number; y: number; r: number }[]} */
-  const buildBalls = (globalT) => {
+  /** @type {{ x: number; y: number; rx: number; ry: number }[]} */
+  const buildBalls = ( /** @type {number} */ flowT) => {
     const balls = [];
+    const streamPulse = 0.55 + 0.45 * Math.sin(flowT * Math.PI);
     for (let i = 0; i < ballCount; i += 1) {
-      const stagger = i * 0.12;
-      const u = Math.max(0, Math.min(1, globalT * 1.08 - stagger));
-      if (u <= 0.001 && i > 2) continue;
+      const stagger = i * 0.09;
+      const u = Math.max(0, Math.min(1, flowT * 1.05 - stagger));
+      if (u <= 0.001 && i > 3) continue;
       const pt = quadPoint(u, p0, p1, p2);
       const tan = quadTan(u, p0, p1, p2);
       const len = Math.hypot(tan.x, tan.y) || 1;
       const nx = -tan.y / len;
       const ny = tan.x / len;
-      const wob = Math.sin(globalT * Math.PI * 7 + i * 1.1) * (4 + i * 0.8);
-      const pul = 0.88 + 0.14 * Math.sin(globalT * 14 + i);
+      const wob = Math.sin(flowT * Math.PI * 8 + i * 1.05) * (3.5 + i * 0.55);
+      const along = 1.35 + 0.35 * Math.sin(flowT * 12 + i * 0.7);
+      const thin = 0.42 + 0.12 * streamPulse;
       balls.push({
         x: pt.x + nx * wob,
         y: pt.y + ny * wob,
-        r: baseR * pul * (0.9 + 0.1 * (1 - u)),
+        rx: baseR * along * (0.85 + 0.12 * (1 - u)),
+        ry: baseR * thin * (0.95 + 0.08 * (1 - u)),
       });
     }
     if (balls.length === 0) {
-      balls.push({ x: p0.x, y: p0.y, r: baseR });
+      balls.push({ x: p0.x, y: p0.y, rx: baseR * 1.2, ry: baseR * 0.5 });
     }
     return balls;
   };
 
-  const renderFrame = (globalT) => {
-    const balls = buildBalls(globalT);
+  const renderFrame = ( /** @type {number} */ rawT) => {
+    const flowT = smoothstep01(rawT);
+    const edgeFade = smoothstep01(rawT * 6) * smoothstep01((1 - rawT) * 6);
+    const balls = buildBalls(flowT);
     const imageData = ctx.createImageData(rw, rh);
     const d = imageData.data;
 
@@ -298,19 +375,23 @@ export function runPourAnimation(fromWrapEl, toWrapEl, n, colorKey, onComplete) 
           const ball = balls[b];
           const dx = scrX - ball.x;
           const dy = scrY - ball.y;
-          sum += (ball.r * ball.r) / (dx * dx + dy * dy + 1.2);
+          const sx = dx / (ball.rx + 0.1);
+          const sy = dy / (ball.ry + 0.1);
+          sum += 1 / (sx * sx + sy * sy + 0.28);
         }
         if (sum < threshold - edgeBlend) continue;
 
         let a = 1;
         if (sum < threshold + edgeBlend) {
           a = (sum - (threshold - edgeBlend)) / (2 * edgeBlend);
-          if (a < 0.02) continue;
+          if (a < 0.03) continue;
           if (a > 1) a = 1;
         }
 
-        const spec = Math.min(1.35, sum / (threshold * 2.8));
-        const hi = 0.78 + 0.22 * spec;
+        a *= edgeFade;
+
+        const spec = Math.min(1.35, sum / (threshold * 2.4));
+        const hi = 0.74 + 0.26 * spec;
         const idx = (py * rw + px) * 4;
         d[idx] = Math.min(255, rgb[0] * hi);
         d[idx + 1] = Math.min(255, rgb[1] * hi);
@@ -332,15 +413,29 @@ export function runPourAnimation(fromWrapEl, toWrapEl, n, colorKey, onComplete) 
     settled = true;
     if (safety != null) window.clearTimeout(safety);
     window.cancelAnimationFrame(rafId);
+    fromWrapEl.classList.remove("tube-pouring");
+    toWrapEl.classList.remove("tube-pouring");
     layer.remove();
     onComplete();
   };
 
   const start = performance.now();
-  const tick = (now) => {
-    const t = Math.min(1, (now - start) / duration);
-    renderFrame(t);
-    if (t < 1) {
+  const tick = ( /** @type {number} */ now) => {
+    const rawT = Math.min(1, (now - start) / duration);
+    const te = smoothstep01(rawT);
+
+    if (drainWrap) drainWrap.style.transform = `scaleY(${1 - te})`;
+
+    fillWrap.querySelectorAll(".liquid").forEach((el, i) => {
+      const delay = (i / Math.max(n, 1)) * 0.28;
+      const span = Math.max(0.08, 1 - delay);
+      const rawU = Math.max(0, te - delay) / span;
+      const su = smoothstep01(Math.min(1, rawU));
+      el.style.transform = `scaleY(${0.06 + 0.94 * su})`;
+    });
+
+    renderFrame(rawT);
+    if (rawT < 1) {
       rafId = requestAnimationFrame(tick);
     } else {
       settle();
@@ -348,5 +443,5 @@ export function runPourAnimation(fromWrapEl, toWrapEl, n, colorKey, onComplete) 
   };
 
   rafId = requestAnimationFrame(tick);
-  safety = window.setTimeout(settle, 980);
+  safety = window.setTimeout(settle, 1050);
 }
