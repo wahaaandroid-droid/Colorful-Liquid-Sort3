@@ -180,7 +180,8 @@ function tubeEl(index) {
   inner.className = "tube-inner";
 
   const colors = state.tubes[index];
-  for (let i = 0; i < colors.length; i += 1) {
+  // 配列は底→上。flex 列 + flex-end では DOM の先頭が画面上部になるため、上から順に append する
+  for (let i = colors.length - 1; i >= 0; i -= 1) {
     const seg = document.createElement("div");
     seg.className = "liquid";
     const key = colors[i];
