@@ -167,6 +167,25 @@ function shuffleFromSolved(numColors, emptyCount, steps) {
   return tubes;
 }
 
+/**
+ * 同色4段の筒だけ・空筒だけの「勝ち状態」からは、合法手だけでは
+ * 必ずしも混色にはならず（満杯ブロックの移動だけの輪廻）、シャッフルしても isWin のままになる。
+ * その場合に使う、必ず未完了になる交互レイヤー（各色まだ分離できていない）。
+ */
+function buildAlternatingPattern(numColors, emptyCount) {
+  const keys = COLOR_KEYS.slice(0, numColors);
+  const tubes = [];
+  for (let i = 0; i < numColors; i += 1) {
+    const row = [];
+    for (let k = 0; k < MAX_H; k += 1) {
+      row.push(keys[(i + k) % numColors]);
+    }
+    tubes.push(row);
+  }
+  for (let e = 0; e < emptyCount; e += 1) tubes.push([]);
+  return tubes;
+}
+
 function endlessParams(clearedStages) {
   const numColors = Math.min(7, 2 + Math.floor(clearedStages / 2));
   const emptyCount = 2;
@@ -178,10 +197,13 @@ function endlessParams(clearedStages) {
 function startEndlessStage() {
   const { numColors, emptyCount, shuffleSteps, maxMoves } = endlessParams(state.clearedStages);
   let tubes = shuffleFromSolved(numColors, emptyCount, shuffleSteps);
-  let guard = 0;
-  while (isWin(tubes) && guard < 40) {
-    tubes = shuffleFromSolved(numColors, emptyCount, shuffleSteps + 12 + guard * 3);
-    guard += 1;
+  let attempt = 0;
+  while (isWin(tubes) && attempt < 160) {
+    attempt += 1;
+    tubes = shuffleFromSolved(numColors, emptyCount, shuffleSteps + attempt * 3);
+  }
+  if (isWin(tubes)) {
+    tubes = buildAlternatingPattern(numColors, emptyCount);
   }
   state.tubes = tubes;
   state.stageSnapshot = cloneTubes(tubes);
