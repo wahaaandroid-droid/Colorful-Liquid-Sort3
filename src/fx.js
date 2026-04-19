@@ -45,6 +45,33 @@ function smoothstep01(t) {
   return x * x * (3 - 2 * x);
 }
 
+/**
+ * @param {number} dx
+ * @param {number} dy
+ * @param {number} rx
+ * @param {number} ry
+ * @param {number} [soft]
+ */
+function ellipticalField(dx, dy, rx, ry, soft = 0.26) {
+  const sx = dx / (rx + 0.06);
+  const sy = dy / (ry + 0.06);
+  return 1 / (sx * sx + sy * sy + soft);
+}
+
+/**
+ * @param {{ x: number; y: number; rx: number; ry: number }[]} balls
+ * @param {number} scrX
+ * @param {number} scrY
+ */
+function sumMetaballs(balls, scrX, scrY) {
+  let s = 0;
+  for (let i = 0; i < balls.length; i += 1) {
+    const b = balls[i];
+    s += ellipticalField(scrX - b.x, scrY - b.y, b.rx, b.ry);
+  }
+  return s;
+}
+
 export function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
@@ -324,78 +351,155 @@ export function runPourAnimation(fromWrapEl, toWrapEl, n, colorKey, liquidGradie
 
   playPourStart();
 
-  const ballCount = Math.min(11, 6 + Math.min(5, n));
-  const baseR = 7 + n * 1.15;
+  const streamBallCount = Math.min(13, 7 + Math.min(5, n));
+  const dripBallCount = 16;
+  const baseR = 6.5 + n * 1.05;
   const duration = 640;
-  const threshold = 2.35;
-  const edgeBlend = 0.95;
+  /** 合成場の閾値（主干＋微滴） */
+  const threshold = 2.05;
+  const edgeBlend = 1.05;
+  const dripWeight = 0.52;
+  const haloWeight = 0.22;
 
-  /** @type {{ x: number; y: number; rx: number; ry: number }[]} */
-  const buildBalls = ( /** @type {number} */ flowT) => {
+  /** 注ぎ帯の主干メタボール（細い楕円チェーン） */
+  /** @type {(flowT: number) => { x: number; y: number; rx: number; ry: number }[]} */
+  const buildStreamBalls = (flowT) => {
     const balls = [];
-    const streamPulse = 0.55 + 0.45 * Math.sin(flowT * Math.PI);
-    for (let i = 0; i < ballCount; i += 1) {
-      const stagger = i * 0.09;
-      const u = Math.max(0, Math.min(1, flowT * 1.05 - stagger));
-      if (u <= 0.001 && i > 3) continue;
+    const streamPulse = 0.52 + 0.48 * Math.sin(flowT * Math.PI);
+    const neck = 0.88 + 0.12 * Math.sin(flowT * 14 + 2.1);
+    for (let i = 0; i < streamBallCount; i += 1) {
+      const stagger = i * 0.078;
+      const u = Math.max(0, Math.min(1, flowT * 1.06 - stagger));
+      if (u <= 0.001 && i > 4) continue;
       const pt = quadPoint(u, p0, p1, p2);
       const tan = quadTan(u, p0, p1, p2);
       const len = Math.hypot(tan.x, tan.y) || 1;
       const nx = -tan.y / len;
       const ny = tan.x / len;
-      const wob = Math.sin(flowT * Math.PI * 8 + i * 1.05) * (3.5 + i * 0.55);
-      const along = 1.35 + 0.35 * Math.sin(flowT * 12 + i * 0.7);
-      const thin = 0.42 + 0.12 * streamPulse;
+      const wob =
+        Math.sin(flowT * Math.PI * 9 + i * 1.08) * (3.2 + i * 0.5) +
+        Math.sin(flowT * 22 + i * 2.4) * 1.1;
+      const along = 1.42 + 0.38 * Math.sin(flowT * 13 + i * 0.65);
+      const thin = (0.36 + 0.11 * streamPulse) * neck * (0.92 + 0.08 * (1 - u));
       balls.push({
         x: pt.x + nx * wob,
         y: pt.y + ny * wob,
-        rx: baseR * along * (0.85 + 0.12 * (1 - u)),
-        ry: baseR * thin * (0.95 + 0.08 * (1 - u)),
+        rx: baseR * along * (0.82 + 0.14 * (1 - u)),
+        ry: baseR * thin * (0.92 + 0.1 * (1 - u)),
       });
     }
     if (balls.length === 0) {
-      balls.push({ x: p0.x, y: p0.y, rx: baseR * 1.2, ry: baseR * 0.5 });
+      balls.push({ x: p0.x, y: p0.y, rx: baseR * 1.15, ry: baseR * 0.48 });
     }
     return balls;
+  };
+
+  /** 表面張力っぽい微滴・にじみ */
+  /** @type {(flowT: number) => { x: number; y: number; rx: number; ry: number }[]} */
+  const buildDripBalls = (flowT) => {
+    const drips = [];
+    for (let i = 0; i < dripBallCount; i += 1) {
+      const stagger = i * 0.055;
+      const u = Math.max(0, Math.min(1, flowT * 1.1 - stagger));
+      if (u <= 0 && i > 6) continue;
+      const pt = quadPoint(u, p0, p1, p2);
+      const tan = quadTan(u, p0, p1, p2);
+      const len = Math.hypot(tan.x, tan.y) || 1;
+      const nx = -tan.y / len;
+      const ny = tan.x / len;
+      const offN = Math.sin(flowT * 17 + i * 1.7) * 2.8;
+      const offT = Math.cos(flowT * 19 + i * 1.3) * 2.2;
+      const rr = 2.4 + (i % 4) * 0.55 + Math.sin(flowT * 24 + i) * 0.35;
+      drips.push({
+        x: pt.x + nx * offN + ny * offT * 0.35,
+        y: pt.y + ny * offN - nx * offT * 0.35,
+        rx: rr * 0.95,
+        ry: rr * 1.05,
+      });
+    }
+    return drips;
+  };
+
+  /** 外側の柔らかい暈（縁を溶かす） */
+  /** @type {(main: { x: number; y: number; rx: number; ry: number }[]) => { x: number; y: number; rx: number; ry: number }[]} */
+  const buildHaloBalls = (main) => {
+    const halos = [];
+    const step = Math.max(1, Math.floor(main.length / 6));
+    for (let i = 0; i < main.length; i += step) {
+      const b = main[i];
+      halos.push({
+        x: b.x,
+        y: b.y,
+        rx: b.rx * 1.85,
+        ry: b.ry * 1.75,
+      });
+    }
+    return halos;
   };
 
   const renderFrame = ( /** @type {number} */ rawT) => {
     const flowT = smoothstep01(rawT);
     const edgeFade = smoothstep01(rawT * 6) * smoothstep01((1 - rawT) * 6);
-    const balls = buildBalls(flowT);
+    const stream = buildStreamBalls(flowT);
+    const drips = buildDripBalls(flowT);
+    const halos = buildHaloBalls(stream);
+
     const imageData = ctx.createImageData(rw, rh);
     const d = imageData.data;
+    const tLow = threshold - edgeBlend;
+    const tHigh = threshold + edgeBlend;
 
     for (let py = 0; py < rh; py += 1) {
       for (let px = 0; px < rw; px += 1) {
         const scrX = minX + ((px + 0.5) / rw) * cw;
         const scrY = minY + ((py + 0.5) / rh) * ch;
-        let sum = 0;
-        for (let b = 0; b < balls.length; b += 1) {
-          const ball = balls[b];
-          const dx = scrX - ball.x;
-          const dy = scrY - ball.y;
-          const sx = dx / (ball.rx + 0.1);
-          const sy = dy / (ball.ry + 0.1);
-          sum += 1 / (sx * sx + sy * sy + 0.28);
-        }
-        if (sum < threshold - edgeBlend) continue;
+
+        const sumCore = sumMetaballs(stream, scrX, scrY);
+        const sumDrip = sumMetaballs(drips, scrX, scrY);
+        const sumHalo = sumMetaballs(halos, scrX, scrY);
+        const sum = sumCore + dripWeight * sumDrip + haloWeight * sumHalo;
+
+        if (sum < tLow) continue;
 
         let a = 1;
-        if (sum < threshold + edgeBlend) {
-          a = (sum - (threshold - edgeBlend)) / (2 * edgeBlend);
-          if (a < 0.03) continue;
+        if (sum < tHigh) {
+          a = (sum - tLow) / (tHigh - tLow);
+          if (a < 0.025) continue;
           if (a > 1) a = 1;
         }
 
         a *= edgeFade;
 
-        const spec = Math.min(1.35, sum / (threshold * 2.4));
-        const hi = 0.74 + 0.26 * spec;
+        /** 内部ほど明るく、縁は暗く（球状の体） */
+        const depth = Math.min(1, Math.max(0, (sum - tLow) / (edgeBlend * 4.2)));
+        const depthCurve = depth ** 0.82;
+        const rimDark = 1 - depthCurve * 0.42;
+
+        /** スペキュラー（左上からの光） */
+        const wave = Math.sin(scrX * 0.09 + scrY * 0.055 + flowT * 18);
+        const glint = depthCurve ** 2.4 * (0.38 + 0.22 * wave);
+        const specR = 255 * glint * 0.88;
+        const specG = 255 * glint * 0.92;
+        const specB = 255 * glint;
+
+        let cr = rgb[0] * rimDark * (0.88 + 0.12 * depthCurve);
+        let cg = rgb[1] * rimDark * (0.88 + 0.12 * depthCurve);
+        let cb = rgb[2] * rimDark * (0.88 + 0.12 * depthCurve);
+
+        cr = cr * (1 - glint) + specR * glint;
+        cg = cg * (1 - glint) + specG * glint;
+        cb = cb * (1 - glint) + specB * glint;
+
+        /** ごく弱い「厚み」チり（僅かな屈折っぽさ） */
+        const chr = 1 + 0.04 * Math.sin(py * 0.11 + px * 0.07 + flowT * 12);
+        const chb = 1 - 0.035 * Math.sin(py * 0.09 - px * 0.06 + flowT * 11);
+        cr *= chr;
+        cb *= chb;
+
         const idx = (py * rw + px) * 4;
-        d[idx] = Math.min(255, rgb[0] * hi);
-        d[idx + 1] = Math.min(255, rgb[1] * hi);
-        d[idx + 2] = Math.min(255, rgb[2] * hi);
+        d[idx] = Math.min(255, cr);
+        d[idx + 1] = Math.min(255, cg);
+        d[idx + 2] = Math.min(255, cb);
         d[idx + 3] = Math.round(a * 255);
       }
     }
