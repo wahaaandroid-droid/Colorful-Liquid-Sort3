@@ -1,4 +1,12 @@
 import "./style.css";
+import {
+  resumeAudio,
+  prefersReducedMotion,
+  playTubeSelect,
+  playPourLand,
+  playWinFanfare,
+  runPourAnimation,
+} from "./fx.js";
 
 const MAX_H = 4;
 const START_LIVES = 3;
@@ -45,7 +53,7 @@ const LEVELS = [
   ],
 ];
 
-/** @type {{ mode: 'menu' | 'classic' | 'endless'; levelIndex: number; tubes: ColorKey[][]; selected: number | null; moves: number; history: ColorKey[][][]; won: boolean; lives: number; clearedStages: number; maxMoves: number; stageSnapshot: ColorKey[][] | null; endlessGameOver: boolean; lifeLossReason: null | 'moves' | 'declare' }} */
+/** @type {{ mode: 'menu' | 'classic' | 'endless'; levelIndex: number; tubes: ColorKey[][]; selected: number | null; moves: number; history: ColorKey[][][]; won: boolean; lives: number; clearedStages: number; maxMoves: number; stageSnapshot: ColorKey[][] | null; endlessGameOver: boolean; lifeLossReason: null | 'moves' | 'declare'; pouring: boolean }} */
 const state = {
   mode: "menu",
   levelIndex: 0,
@@ -60,6 +68,7 @@ const state = {
   stageSnapshot: null,
   endlessGameOver: false,
   lifeLossReason: null,
+  pouring: false,
 };
 
 const app = document.getElementById("app");
@@ -184,6 +193,7 @@ function startEndlessStage() {
 }
 
 function startEndlessRun() {
+  state.pouring = false;
   state.mode = "endless";
   state.lives = START_LIVES;
   state.clearedStages = 0;
@@ -226,6 +236,7 @@ function acknowledgeLifeLoss() {
 }
 
 function goMenu() {
+  state.pouring = false;
   state.mode = "menu";
   state.endlessGameOver = false;
   state.lifeLossReason = null;
@@ -235,6 +246,7 @@ function goMenu() {
 }
 
 function startClassic() {
+  state.pouring = false;
   state.mode = "classic";
   state.levelIndex = 0;
   resetLevel();
@@ -280,12 +292,11 @@ function nextLevel() {
   resetLevel();
 }
 
-function tryPour(fromIdx, toIdx) {
+/** @returns この注ぎでクリアしたか */
+function commitPour(fromIdx, toIdx, n) {
+  pushHistory();
   const from = state.tubes[fromIdx];
   const to = state.tubes[toIdx];
-  const n = canPour(from, to);
-  if (n <= 0) return false;
-  pushHistory();
   const { from: nf, to: nt } = pour(from, to, n);
   state.tubes[fromIdx] = nf;
   state.tubes[toIdx] = nt;
@@ -293,21 +304,33 @@ function tryPour(fromIdx, toIdx) {
   state.selected = null;
   if (isWin(state.tubes)) {
     state.won = true;
+    playWinFanfare();
     return true;
   }
   if (state.mode === "endless" && state.moves > state.maxMoves) {
     failEndless("moves");
-    return true;
+    return false;
   }
-  return true;
+  return false;
+}
+
+function finishPourAndRender(fromIdx, toIdx, n) {
+  const won = commitPour(fromIdx, toIdx, n);
+  if (!won && !state.endlessGameOver && !state.lifeLossReason) playPourLand();
+  state.pouring = false;
+  render();
 }
 
 function onTubeClick(index) {
+  if (state.pouring) return;
   if (state.mode === "endless" && (state.won || state.endlessGameOver || state.lifeLossReason)) return;
   if (state.won) return;
+  resumeAudio();
+
   if (state.selected === null) {
     if (state.tubes[index].length === 0) return;
     state.selected = index;
+    playTubeSelect();
     render();
     return;
   }
@@ -317,10 +340,38 @@ function onTubeClick(index) {
     return;
   }
   const fromIdx = state.selected;
-  const ok = tryPour(fromIdx, index);
-  if (!ok && state.tubes[index].length > 0) {
+  const from = state.tubes[fromIdx];
+  const to = state.tubes[index];
+  const n = canPour(from, to);
+  if (n > 0) {
+    const color = /** @type {ColorKey} */ (from[from.length - 1]);
+    const bg = PALETTE[color] ?? PALETTE.r;
+
+    if (prefersReducedMotion()) {
+      const won = commitPour(fromIdx, index, n);
+      if (!won && !state.endlessGameOver && !state.lifeLossReason) playPourLand();
+      render();
+      return;
+    }
+
+    state.pouring = true;
+    render();
+    requestAnimationFrame(() => {
+      const fw = document.querySelector(`[data-tube-index="${fromIdx}"]`);
+      const tw = document.querySelector(`[data-tube-index="${index}"]`);
+      if (!fw || !tw) {
+        finishPourAndRender(fromIdx, index, n);
+        return;
+      }
+      runPourAnimation(fw, tw, n, bg, () => finishPourAndRender(fromIdx, index, n));
+    });
+    return;
+  }
+
+  if (state.tubes[index].length > 0) {
     state.selected = index;
-  } else if (!ok) {
+    playTubeSelect();
+  } else {
     state.selected = fromIdx;
   }
   render();
@@ -329,12 +380,14 @@ function onTubeClick(index) {
 function tubeEl(index) {
   const wrap = document.createElement("div");
   wrap.className = "tube-wrap";
+  wrap.dataset.tubeIndex = String(index);
 
   const tube = document.createElement("button");
   tube.type = "button";
   tube.className = "tube";
   tube.setAttribute("aria-label", `試験管 ${index + 1}`);
   if (state.selected === index) tube.classList.add("selected");
+  if (state.pouring) tube.disabled = true;
   if (state.mode === "endless" && (state.won || state.endlessGameOver || state.lifeLossReason)) {
     tube.disabled = true;
   }
@@ -349,8 +402,8 @@ function tubeEl(index) {
   const colors = state.tubes[index];
   for (let i = colors.length - 1; i >= 0; i -= 1) {
     const seg = document.createElement("div");
-    seg.className = "liquid";
     const key = colors[i];
+    seg.className = `liquid liq liq-${key}`;
     seg.style.background = PALETTE[key] ?? PALETTE.r;
     inner.appendChild(seg);
   }
@@ -517,8 +570,14 @@ function renderMenu() {
     <p class="hint menu-hint">エンドレスは1プレイ内のライフ制です。手数上限を超えるか「詰み宣言」でライフが減り、0で終了します。</p>
   `;
 
-  wrap.querySelector('[data-go="classic"]')?.addEventListener("click", () => startClassic());
-  wrap.querySelector('[data-go="endless"]')?.addEventListener("click", () => startEndlessRun());
+  wrap.querySelector('[data-go="classic"]')?.addEventListener("click", () => {
+    resumeAudio();
+    startClassic();
+  });
+  wrap.querySelector('[data-go="endless"]')?.addEventListener("click", () => {
+    resumeAudio();
+    startEndlessRun();
+  });
 
   app.appendChild(wrap);
 }
