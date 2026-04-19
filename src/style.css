@@ -48,6 +48,21 @@ body {
   margin: 0 auto;
 }
 
+.top-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.top-actions .topbar {
+  margin-bottom: 0;
+}
+
+.top-actions .btn.ghost {
+  align-self: flex-end;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -116,6 +131,23 @@ body {
 .btn.primary {
   background: linear-gradient(135deg, #60a5fa, #a78bfa);
   border-color: rgba(255, 255, 255, 0.25);
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.22);
+  font-size: 0.8rem;
+  padding: 8px 12px;
+}
+
+.btn.danger {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.btn.full {
+  width: 100%;
+  justify-content: center;
 }
 
 .btn:disabled {
@@ -274,6 +306,34 @@ body {
   gap: 10px;
   justify-content: center;
   flex-wrap: wrap;
+}
+
+.menu-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 8px 0 24px;
+}
+
+.menu-brand h1 {
+  font-size: 1.35rem;
+}
+
+.menu-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.menu-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 14px 16px;
+  font-size: 1rem;
+}
+
+.menu-hint {
+  margin: 0;
 }
 
 @media (min-width: 480px) {
